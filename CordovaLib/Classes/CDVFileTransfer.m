@@ -153,6 +153,7 @@
 	
 	CDVFileTransferDelegate* delegate = [[[CDVFileTransferDelegate alloc] init] autorelease];
 	delegate.command = self;
+    delegate.direction = CDV_TRANSFER_UPLOAD;
     delegate.callbackId = callbackId;
     delegate.source = server;
     delegate.target = filePath;
@@ -233,6 +234,7 @@
     NSError *error;
     NSString *parentPath;
     BOOL bDirRequest = NO;
+    BOOL errored = NO;
     CDVFile * file;
     
     if(direction == CDV_TRANSFER_UPLOAD)
@@ -245,7 +247,7 @@
         }
         [uploadResult setObject:[NSNumber numberWithInt: self.bytesWritten] forKey:@"bytesSent"];
         [uploadResult setObject:[NSNull null] forKey: @"responseCode"];
-        result = [CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsDictionary: uploadResult cast: @"navigator.fileTransfer._castUploadResult"];
+        result = [CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsDictionary: uploadResult];
     }
     if(direction == CDV_TRANSFER_DOWNLOAD)
     {
@@ -266,30 +268,36 @@
                 if ( downloadResponse == NO ) {
                     // send our results back
                     result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary: [command createFileTransferError:[NSString stringWithFormat:@"%d", INVALID_URL_ERR] AndSource:source AndTarget:target]];
+                    errored = YES;
                 } else {
                     DLog(@"File Transfer Download success");
                     
                     file = [[[CDVFile alloc] init] autorelease];
                     
-                    result = [CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsDictionary: [file getDirectoryEntry: target isDirectory: bDirRequest] cast: @"window.localFileSystem._castEntry"];
+                    result = [CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsDictionary: [file getDirectoryEntry: target isDirectory: bDirRequest]];
                 }
             }
             @catch (id exception) {
                 // jump back to main thread
                 result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary: [command createFileTransferError:[NSString stringWithFormat:@"%d", FILE_NOT_FOUND_ERR] AndSource:source AndTarget:target]];
+                errored = YES;
             }
         } else {
             result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary: [command createFileTransferError:[NSString stringWithFormat:@"%d", CONNECTION_ERR] AndSource:source AndTarget:target]];
+            errored = YES;
         }
     }
-    [command writeJavascript:[result toSuccessCallbackString: callbackId]];
+    if(!errored) {
+        [command writeJavascript:[result toSuccessCallbackString: callbackId]];
+    } else
+        [command writeJavascript:[result toErrorCallbackString: callbackId]];
     [uploadResponse release];
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
 {
     NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-    responseCode = [response statusCode];
+    responseCode = [httpResponse statusCode];
 }
 
 - (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error 
